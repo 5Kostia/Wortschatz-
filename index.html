@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#18191d"><meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Wortschatz">
+<link rel="manifest" href="manifest.json"><link rel="apple-touch-icon" href="icon-180.png"><title>Wortschatz</title>
+<style>
+:root{--bg:#18191d;--s:#212329;--s2:#292b33;--ln:#32343d;--tx:#e4e4e8;--mu:#9597a2;--ac:#7d9bd1;--ok:#78b895;--bad:#d48a8a}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--tx);font:16px/1.45 -apple-system,system-ui,"Segoe UI",sans-serif}
+html{background:#1d1f24}
+body{background:var(--bg);display:flex;flex-direction:column;height:100vh;height:100dvh}
+#app{flex:1;min-height:0;width:100%;max-width:560px;align-self:center;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:calc(env(safe-area-inset-top) + 18px) 16px 24px}
+h1{font-size:26px;margin:4px 0 14px;font-weight:650}h2{font-size:19px;margin:18px 0 10px}
+.card{background:var(--s);border:1px solid var(--ln);border-radius:16px;padding:16px;margin:0 0 12px}
+.big{font-size:26px;font-weight:650;margin:6px 0 10px;overflow-wrap:anywhere}.mu{color:var(--mu);font-size:14px}.ok{color:var(--ok)}.bad{color:var(--bad)}
+.btn{display:block;width:100%;text-align:left;background:var(--s2);color:var(--tx);border:1px solid var(--ln);border-radius:14px;padding:15px 16px;margin:0 0 10px;font:inherit;min-height:52px}
+.btn:active{background:#33353f}.btn.p{background:var(--ac);color:#14161b;border-color:var(--ac);font-weight:650;text-align:center}
+.btn.c{text-align:center}.row{display:flex;gap:10px}.row .btn{margin:0 0 10px}
+.chip{display:inline-block;padding:9px 14px;margin:0 8px 8px 0;border-radius:20px;border:1px solid var(--ln);background:var(--s2);color:var(--tx);font:inherit}.chip.on{border-color:var(--ac);color:var(--ac)}
+input[type=text],input[type=number],select{width:100%;background:var(--s2);color:var(--tx);border:1px solid var(--ln);border-radius:12px;padding:14px;font:inherit;margin:0 0 10px}
+.ex{margin:6px 0 0;padding-left:14px;border-left:2px solid var(--ln)}.ex i{color:var(--mu)}
+nav{flex:none;background:#1d1f24;border-top:1px solid var(--ln);display:flex;padding:6px 6px calc(env(safe-area-inset-bottom) + 6px)}
+nav button{flex:1;background:none;border:0;color:var(--mu);font:12px inherit;padding:6px 0}nav button b{display:block;font-size:20px;font-weight:400}nav button.on{color:var(--ac)}
+
+:root{color-scheme:dark;--bg:#17191f;--s:#222630;--s2:#272c36;--ln:#383f4d;--tx:#f1f2f6;--mu:#afb6c5;--ac:#aac5fb}
+html{background:#20242d;height:-webkit-fill-available}
+body{height:100vh;height:-webkit-fill-available;height:100dvh}
+#app{padding-inline:max(18px,env(safe-area-inset-left)) max(18px,env(safe-area-inset-right))}
+h1{font-size:clamp(26px,6vw,32px);letter-spacing:-.035em;margin:6px 0 20px}
+.brand{display:flex;align-items:center;gap:11px}.brand span{display:grid;place-items:center;width:37px;height:37px;border-radius:11px;background:#809ed4;color:#17191f;font:bold italic 26px/1 system-ui}
+.today{background:linear-gradient(120deg,#2c3546,#252b38);padding:21px;margin-bottom:18px}
+.today h2{margin:0 0 18px}.metrics{display:grid;grid-template-columns:1fr 1fr;gap:12px;color:var(--mu);font-size:14px}
+.metrics strong{display:block;color:var(--tx);font-size:34px;line-height:1.22}.metrics small{font-size:16px;color:var(--mu);font-weight:500}
+progress{width:100%;height:6px;border:0;border-radius:8px;overflow:hidden;background:#424a59;margin-top:18px}
+progress::-webkit-progress-bar{background:#424a59}progress::-webkit-progress-value{background:var(--ac)}
+.btn{cursor:pointer;transition:transform .12s,background-color .12s}.btn:active{transform:scale(.99)}.btn:focus-visible,button:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+.big{line-height:1.2}.ex{border-color:#586c91;margin-top:12px}.result{animation:reveal .18s ease-out}
+@keyframes reveal{from{opacity:.65;transform:translateY(5px)}to{opacity:1;transform:none}}
+nav{background:#20242d;align-items:center;padding:3px max(5px,env(safe-area-inset-right)) env(safe-area-inset-bottom,0px) max(5px,env(safe-area-inset-left))}
+nav button{font:500 11px/1.25 system-ui;min-height:48px;padding:3px 0;cursor:pointer}
+nav button b{width:40px;margin:auto auto 2px;line-height:23px;border-radius:9px}nav button.on b{background:#374257}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+
+:root{--panel:#20242d;--active:#374257;--hero:#2c3546;--ink:#17191f;--accent-text:var(--ac)}
+:root[data-theme=lime]{--bg:#0d0e0b;--s:#191b15;--s2:#20241a;--ln:#333a29;--mu:#b7bdae;--ac:#bedc89;--panel:#141610;--active:#303b23;--hero:#252e1b}
+:root[data-theme=graphite]{--bg:#0c0c0d;--s:#19191b;--s2:#212124;--ln:#343437;--mu:#b1b1b7;--ac:#414146;--ink:#f4f4f5;--accent-text:#dedee2;--panel:#141416;--active:#343438;--hero:#242427}
+html,nav{background:var(--panel)}.today{background:linear-gradient(120deg,var(--hero),var(--s))}
+.brand span,.btn.p{background:var(--ac);color:var(--ink)}.btn:active,.btn.p:active{filter:brightness(.92)}
+nav button b{display:grid;place-items:center;width:43px;height:28px}nav svg{width:22px;height:22px}nav button.on b{background:var(--active)}
+nav button.on,.chip.on,.milestone{color:var(--accent-text)}.chip.on,.ex{border-color:var(--accent-text)}
+progress{background:var(--ln);accent-color:var(--accent-text)}progress::-webkit-progress-bar{background:var(--ln)}progress::-webkit-progress-value{background:var(--accent-text)}
+:focus-visible{outline-color:var(--accent-text)!important}label[for=theme]{display:block;margin-bottom:7px;color:var(--mu)}
+.screen{animation:reveal .16s ease-out}.summary{margin:0 0 15px;padding:12px 15px;border-left:3px solid var(--accent-text);background:var(--s);border-radius:8px}.summary div{color:var(--mu)}
+.result-wrap{position:relative;isolation:isolate}.confetti{position:absolute;inset:0;pointer-events:none;z-index:-1}
+.confetti i{position:absolute;top:0;left:var(--x);width:4px;height:7px;border-radius:1px;background:var(--accent-text);opacity:0;animation:sprinkle .85s var(--delay) ease-out}
+@keyframes sprinkle{0%{opacity:0}20%{opacity:.85;transform:translate(var(--drift),-18px) rotate(70deg)}100%{opacity:0;transform:translate(var(--drift),12px) rotate(200deg)}}
+@media(prefers-reduced-motion:reduce){.confetti{display:none}}
+</style></head><body><main id="app"></main>
+<nav aria-label="Основная навигация"><button data-a="tab" data-v="home"><b><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 10 9-7 9 7M5 9v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9"/></svg></b>Главная</button><button data-a="tab" data-v="learn"><b><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6.5C9 4.6 6.2 4.5 3 5.5v13c3.2-1 6-1 9 1 3-2 5.8-2 9-1v-13c-3.2-1-6-1-9 1Zm0 0v13"/></svg></b>Учить</button><button data-a="tab" data-v="review"><b><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10a8 8 0 0 1 14-3l2 2m0-5v5h-5M20 14a8 8 0 0 1-14 3l-2-2m0 5v-5h5"/></svg></b>Повторить</button><button data-a="tab" data-v="stats"><b><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7.5 10h9m-9 4h6"/></svg></b>Слова</button><button data-a="tab" data-v="set"><b><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h7m4 0h7M3 17h11m4 0h3"/><circle cx="12" cy="7" r="2"/><circle cx="16" cy="17" r="2"/></svg></b>Ещё</button></nav>
+<input type="file" id="imp" accept=".json,application/json,text/plain" hidden>
+<script src="logic.js"></script><script src="app.js"></script></body></html>
