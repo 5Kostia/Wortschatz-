@@ -108,8 +108,9 @@ function mixMenu(mode) {
 function learnMenu() {
   const label = ST.cat === 'mix' ? 'Выбранные разделы' : ST.cat === 'all' ? 'Все разделы' : CATS[ST.cat]?.[0];
   const level = CATS[ST.cat] && ST.level !== 'ALL' ? ' ' + ST.level : '';
-  const cont = label ? btn('cont', '', `Продолжить <span class="mu">· ${E(label + level)}</span>`) : '';
-  show('<h1>Что учим?</h1>' + btn('lvl','all:ALL','Все разделы','p') + btn('mix','learn','Выбрать разделы') + cont + Object.keys(CATS).map(c => btn('cat', c, `${CATS[c][0]} <span class="mu">(осталось ${unseen(c, 'ALL').length})</span>`)).join(''));
+  const cont = label ? btn('cont', '', `Продолжить <span class="mu">· ${E(label + level)}</span>`, 'resume') : '';
+  const all = btn('lvl', 'all:ALL', '<span>Учить все разделы</span><span aria-hidden="true">→</span>', 'p learn-all');
+  show('<h1>Что учим?</h1>' + all + btn('mix','learn','Выбрать разделы') + cont + Object.keys(CATS).map(c => btn('cat', c, `${CATS[c][0]} <span class="mu">(осталось ${unseen(c, 'ALL').length})</span>`)).join(''));
 }
 function levelMenu(cat) {
   show(`<h1>${CATS[cat][0]}</h1><p class="mu">Какой уровень учим?</p>` + LV.filter(l => D[cat].some(c => c.l === l)).map(l => btn('lvl', cat + ':' + l, `${l} <span class="mu">(осталось ${unseen(cat, l).length})</span>`)).join('') + btn('lvl', cat + ':ALL', `Все уровни <span class="mu">(${unseen(cat, 'ALL').length})</span>`) + btn('tab', 'learn', 'Назад', 'c'));
@@ -257,7 +258,7 @@ function settings() {
   <div class="card"><h2 style="margin-top:0">Способ ответов</h2>${sel('meth', [['auto', 'По этапам (сначала варианты, потом ввод)'], ['choice', 'Только варианты'], ['type', 'Только ввод вручную']], ST.method)}
   <h2>Направление вопросов</h2>${sel('dirs', [['alt', 'Чередовать'], ['de_ru', 'Немецкий → русский'], ['ru_de', 'Русский → немецкий']], ST.dir)}</div>
   <div class="card"><h2 style="margin-top:0">Копия прогресса</h2><p class="mu">Данные хранятся только на этом телефоне. Последняя копия: <span id="bkd">${bk}</span>.</p>${btn('bk', 'dl', 'Скачать файл', 'c')}${btn('bk', 'share', 'Поделиться файлом', 'c')}${btn('bk', 'copy', 'Скопировать текст', 'c')}<div id="bkm" class="mu"></div>
-  <h2>Загрузить копию</h2>${btn('imp', '', 'Выбрать файл', 'c')}${btn('impclip', '', 'Вставить из буфера', 'c')}</div><p class="mu">Wortschatz 2.8</p>`);
+  <h2>Загрузить копию</h2>${btn('imp', '', 'Выбрать файл', 'c')}${btn('impclip', '', 'Вставить из буфера', 'c')}</div><p class="mu">Wortschatz 2.10</p>`);
 }
 // ---------- действия ----------
 function go(t) { tab = t; LAST = null; ({ home, learn: learnMenu, review: reviewMenu, stats, set: settings }[t] || home)(); }
