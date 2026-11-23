@@ -3,7 +3,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#18191d"><meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Wortschatz">
-<link rel="manifest" href="manifest.json"><link rel="apple-touch-icon" href="icon-180.png"><title>Wortschatz</title>
+<link rel="manifest" href="manifest.json?v=27"><link rel="apple-touch-icon" href="icon-180-v27.png"><title>Wortschatz</title>
 <style>
 :root{--bg:#18191d;--s:#212329;--s2:#292b33;--ln:#32343d;--tx:#e4e4e8;--mu:#9597a2;--ac:#7d9bd1;--ok:#78b895;--bad:#d48a8a}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -48,6 +48,14 @@ nav button b{width:40px;margin:auto auto 2px;line-height:23px;border-radius:9px}
 :root{--panel:#20242d;--active:#374257;--hero:#2c3546;--ink:#17191f;--accent-text:var(--ac)}
 :root[data-theme=lime]{--bg:#0d0e0b;--s:#191b15;--s2:#20241a;--ln:#333a29;--mu:#b7bdae;--ac:#bedc89;--panel:#141610;--active:#303b23;--hero:#252e1b}
 :root[data-theme=graphite]{--bg:#0c0c0d;--s:#19191b;--s2:#212124;--ln:#343437;--mu:#b1b1b7;--ac:#414146;--ink:#f4f4f5;--accent-text:#dedee2;--panel:#141416;--active:#343438;--hero:#242427}
+:root[data-theme=powder]{color-scheme:light;--bg:#f9eff3;--s:#fff8fb;--s2:#fff7fa;--ln:#ddc7d2;--tx:#352431;--mu:#675263;--ac:#dca9c2;--ink:#351928;--accent-text:#743856;--panel:#f4e4ec;--active:#e9ccdc;--hero:#f2dbe7;--ok:#29623e;--bad:#953044}
+:root[data-theme=pink]{--bg:#170f1b;--s:#2b1b31;--s2:#322037;--ln:#56365c;--tx:#fff2fb;--mu:#dfbbd8;--ac:#f582ca;--ink:#32122c;--panel:#241529;--active:#512951;--hero:#47234d}
+.mix-options{display:flex;flex-wrap:wrap;gap:8px}
+.mix-options label{display:flex;align-items:center;gap:5px;padding:10px;border:1px solid var(--ln);border-radius:10px;cursor:pointer}
+.mix-options input{accent-color:var(--accent-text)}
+#personal-form label{display:block;margin-bottom:8px}
+#personal-form textarea{display:block;width:100%;background:var(--s2);color:var(--tx);border:1px solid var(--ln);border-radius:12px;padding:12px;font:inherit}
+
 html,body,nav{background:var(--panel)}.today{background:linear-gradient(120deg,var(--hero),var(--s))}
 .brand span,.btn.p{background:var(--ac);color:var(--ink)}.btn:active,.btn.p:active{filter:brightness(.92)}
 nav button b{display:grid;place-items:center;width:43px;height:28px}nav svg{width:22px;height:22px}nav button.on b{background:var(--active)}

@@ -1,7 +1,7 @@
 (async () => {
 const $ = s => document.querySelector(s), now = () => Math.floor(Date.now() / 1000);
 const E = s => s == null ? '' : String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const CATS = { art: ['Артикли', 0], noun: ['Существительные', 1], verb: ['Глаголы', 1], adj: ['Прилагательные', 0], vp: ['Глаголы с предлогами', 0], phr: ['Фразеологизмы', 0] };
+const CATS = { art: ['Артикли', 0], noun: ['Существительные', 1], verb: ['Глаголы', 1], adj: ['Прилагательные', 0], vp: ['Глаголы с предлогами', 0], phr: ['Фразеологизмы', 0], own: ['Свои слова', 1] };
 const LV = ['A1', 'A2', 'B1', 'B2', 'C1'], SUF = [['schaft', 'die'], ['heit', 'die'], ['keit', 'die'], ['ung', 'die'], ['ion', 'die'], ['tät', 'die'], ['ik', 'die'], ['ur', 'die'], ['ei', 'die'], ['enz', 'die'], ['anz', 'die'], ['chen', 'das'], ['lein', 'das'], ['ment', 'das'], ['ling', 'der'], ['ismus', 'der'], ['ant', 'der'], ['ist', 'der'], ['or', 'der']];
 let D, P = {}, ST = { limit: 10, method: 'auto', dir: 'alt', cat: null, level: 'ALL', bk: 0 }, tab = 'home', Q = null, RC = 'all', LAST = null, LS = { cat: 'noun', st: 'L', n: 30 };
 const idb = () => new Promise((ok, no) => { const r = indexedDB.open('wortschatz-v2', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); });
@@ -9,7 +9,7 @@ const kvGet = async k => { const db = await idb(); return new Promise(r => { con
 const kvSet = async (k, v) => { const db = await idb(); return new Promise(r => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = r; t.onerror = r; }); };
 const save = () => { kvSet('progress', P); kvSet('settings', ST); };
 try { P = (await kvGet('progress')) || {}; ST = Object.assign(ST, await kvGet('settings')); } catch (e) { }
-const themes = { standard: 'Стандартная', lime: 'Чёрная с зелёным', graphite: 'Чёрная с серым' };
+const themes = { standard: 'Стандартная', lime: 'Чёрная с зелёным', graphite: 'Чёрная с серым', powder: 'Пудровая', pink: 'Ягодная' };
 const root = document.documentElement;
 const standaloneIOS = navigator.standalone === true;
 const portrait = matchMedia('(orientation: portrait)');
@@ -37,6 +37,7 @@ function applyTheme() {
 applyTheme();
 if (!ST.since) { ST.since = Math.floor(Date.now() / 1000); kvSet('settings', ST); }
 D = await (await fetch('words.json')).json();
+D.own = (await kvGet('own').catch(() => [])) || [];
 for (const c in D) D[c].forEach((x, i) => { x.cat = c; x.idx = i; });
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
 const key = c => c.cat + ':' + c.u, L = window.L, front = L.front;
@@ -56,7 +57,7 @@ function reveal(c) {
   let h = c.cat === 'verb' ? `<div class="big">${E(c.d)}</div><div>${E(c.t)}</div><div class="mu">er/sie/es ${E(c.p)} · ${E(c.f)}</div>` :
     c.cat === 'vp' ? `<div class="big">${E(c.d)} ${E(c.pr)} + ${E(c.c)}</div><div>${E(c.t)}</div>` :
       c.a ? `<div class="big">${E(c.a)} ${E(c.d)}</div><div>${E(c.t)}</div>` : `<div class="big">${E(c.d)}</div><div>${E(c.t)}</div>`;
-  h += `<div class="mu">Уровень: ${c.l}</div>`;
+  if (c.l) h += `<div class="mu">Уровень: ${E(c.l)}</div>`;
   if (c.e.length) h += '<h2>Примеры</h2>' + c.e.map(x => `<div class="ex">${E(x[0])}<br><i>${E(x[1])}</i></div>`).join('');
   return h;
 }
@@ -79,17 +80,44 @@ function home() {
   ${old ? '<div class="card">Прошла неделя с последней копии прогресса. Когда будет минутка, открой «Ещё» → «Сохранить копию».</div>' : ''}
   `);
 }
+function matchesSelection(card, selection) {
+  return selection === 'all' || selection.includes(card.cat + ':ALL') ||
+    selection.includes(card.cat + ':' + (card.l || 'none'));
+}
+function activeLearn() {
+  if (ST.cat === 'mix') return ST.learnMix || [];
+  if (ST.cat === 'all') return 'all';
+  return [ST.cat + ':' + (ST.level || 'ALL')];
+}
+function reviewQueue() {
+  if (RC === 'mix') return dueList().filter(({c}) => matchesSelection(c, ST.reviewMix || []));
+  return dueList(RC === 'all' ? '' : RC);
+}
+function mixMenu(mode) {
+  const selected = ST[mode + 'Mix'] || [];
+  const groups = Object.entries(CATS).filter(([cat]) => D[cat].length).map(([cat,[name]]) => {
+    const levels = ['ALL', ...LV, 'none'].filter(l => l === 'ALL' || D[cat].some(c => (c.l || 'none') === l));
+    const boxes = levels.map(l => {
+      const value = cat + ':' + l;
+      return `<label><input type="checkbox" name="section" value="${value}" ${selected.includes(value) ? 'checked' : ''}>${l === 'ALL' ? 'Все уровни' : l === 'none' ? 'Без уровня' : l}</label>`;
+    });
+    return `<section class="card"><h2>${name}</h2><div class="mix-options">${boxes.join('')}</div></section>`;
+  });
+  show('<h1>Выбрать разделы</h1><p class="mu">Отметь уровни, которые хочешь объединить.</p>' + groups.join('') + btn('startmix',mode,mode === 'learn' ? 'Начать изучение' : 'Начать повторение','p'));
+}
 function learnMenu() {
-  const cont = ST.cat ? btn('cont', '', `Продолжить: ${CATS[ST.cat][0]}${CATS[ST.cat][1] && ST.level !== 'ALL' ? ' ' + ST.level : ''}`, 'p') : '';
-  show('<h1>Что учим?</h1>' + cont + Object.keys(CATS).map(c => btn('cat', c, `${CATS[c][0]} <span class="mu">(осталось ${unseen(c, 'ALL').length})</span>`)).join(''));
+  const label = ST.cat === 'mix' ? 'Выбранные разделы' : ST.cat === 'all' ? 'Все разделы' : CATS[ST.cat]?.[0];
+  const cont = label ? btn('cont', '', 'Продолжить · ' + label + (CATS[ST.cat] && ST.level !== 'ALL' ? ' ' + ST.level : ''), 'c') : '';
+  show('<h1>Что учим?</h1>' + btn('lvl','all:ALL','Все разделы','p') + btn('mix','learn','Выбрать разделы') + cont + Object.keys(CATS).map(c => btn('cat', c, `${CATS[c][0]} <span class="mu">(осталось ${unseen(c, 'ALL').length})</span>`)).join(''));
 }
 function levelMenu(cat) {
-  show(`<h1>${CATS[cat][0]}</h1><p class="mu">Какой уровень учим?</p>` + LV.map(l => btn('lvl', cat + ':' + l, `${l} <span class="mu">(осталось ${unseen(cat, l).length})</span>`)).join('') + btn('lvl', cat + ':ALL', `Все уровни <span class="mu">(${unseen(cat, 'ALL').length})</span>`) + btn('tab', 'learn', 'Назад', 'c'));
+  show(`<h1>${CATS[cat][0]}</h1><p class="mu">Какой уровень учим?</p>` + LV.filter(l => D[cat].some(c => c.l === l)).map(l => btn('lvl', cat + ':' + l, `${l} <span class="mu">(осталось ${unseen(cat, l).length})</span>`)).join('') + btn('lvl', cat + ':ALL', `Все уровни <span class="mu">(${unseen(cat, 'ALL').length})</span>`) + btn('tab', 'learn', 'Назад', 'c'));
 }
 function newCard() {
   tab = 'learn'; if (!ST.cat) return learnMenu();
   if (todayN() >= ST.limit) return show(`<h1>Готово на сегодня </h1><p>Лимит новых слов достигнут (${todayN()}/${ST.limit}). Можно повторить слова или изменить лимит в «Ещё».</p>${btn('tab', 'review', 'Повторить', 'p')}${btn('tab', 'set', 'Настройки', 'c')}`);
-  const pool = unseen(ST.cat, CATS[ST.cat][1] ? ST.level : 'ALL');
+  const selection = activeLearn();
+  const pool = Object.values(D).flat().filter(c => !P[key(c)] && matchesSelection(c, selection));
   if (!pool.length) return show(`<h1>Здесь всё </h1><p>В этом разделе новых слов больше нет.</p>${btn('tab', 'learn', 'Другой раздел', 'c')}`);
   const c = pool[Math.floor(Math.random() * pool.length)];
   if (c.cat === 'art') return ask(c, 'choice_article', 'learn', 1, null);
@@ -97,13 +125,13 @@ function newCard() {
   <div class="row">${btn('know', c.cat + ':' + c.idx + ':y', 'Знаю', 'c')}${btn('know', c.cat + ':' + c.idx + ':n', 'Не знаю', 'c')}</div>${btn('tab', 'learn', 'Другой раздел', 'c')}`);
 }
 function ask(c, type, flow, box, store, dir) {
-  const o = type.startsWith('choice') ? L.options(c, type, D[c.cat]) : {};
+  const o = type.startsWith('choice') ? L.options(c, type, c.cat === 'own' ? [...D.own, ...D.noun] : D[c.cat]) : {};
   Q = { c, type, flow, box, store, dir, opts: o.opts, ok: o.ok, done: false };
   const T = { choice_article: 'Какой артикль?', choice_prep: 'Какой предлог и падеж?', choice_tr: c.cat === 'phr' ? 'Что означает выражение?' : 'Что значит слово?', choice_de: 'Как по-немецки?', type_tr: 'Напиши перевод на русский:', type_de: 'Напиши по-немецки' + (c.cat === 'noun' ? ' (с артиклем)' : '') + ':', type_prep: 'Напиши предлог:' }[type];
   const word = type === 'choice_de' || type === 'type_de' ? E(c.t) : E(c.cat === 'art' ? c.d : front(c)) + (type.endsWith('prep') ? ' …' : '');
   const core = c.d.replace('sich ', '');
   const sub = type === 'type_de' ? `<div class="mu">Подсказка: ${E(core[0])}…, букв: ${core.length}</div>` : '';
-  const left = flow === 'review' ? `<div class="mu">Осталось: ${dueList(RC === 'all' ? '' : RC).length}</div>` : '';
+  const left = flow === 'review' ? `<div class="mu">Осталось: ${reviewQueue().length}</div>` : '';
   let body = o.opts ? o.opts.map((t, i) => btn('ans', i, E(t))).join('') : `<input type="text" id="ans" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" placeholder="Твой ответ">${btn('send', '', 'Проверить', 'p')}`;
   show(`${left}<div class="card"><div class="mu">${T}</div><div class="big">${word}</div>${sub}</div>${body}${btn('ans', -1, 'Не знаю', 'c')}`);
   const i = $('#ans'); if (i) i.focus();
@@ -138,21 +166,21 @@ function finish(ok, unknown, given, note) {
   }
 }
 function nextReview() {
-  tab = 'review'; const all = dueList(RC === 'all' ? '' : RC), pick = all.filter(x => x.c !== LAST) .length ? all.filter(x => x.c !== LAST) : all;
+  tab = 'review'; const all = reviewQueue(), pick = all.filter(x => x.c !== LAST) .length ? all.filter(x => x.c !== LAST) : all;
   if (!pick.length) {
-    const nx = Object.values(P).filter(p => p.d > now()).map(p => p.d).sort((a, b) => a - b)[0];
+    const nx = Object.values(D).flat().filter(c => matchesSelection(c, RC === 'mix' ? ST.reviewMix : RC === 'all' ? 'all' : [RC + ':ALL'])).map(c => P[key(c)]).filter(p => p && p.d > now()).map(p => p.d).sort((a, b) => a - b)[0];
     return show(`<h1>${Object.keys(P).length ? 'Очередь пуста' : 'Пока нечего повторять'}</h1><p>${nx ? 'Ближайшее повторение через ' + L.wait(nx - now()) + '.' : 'Начни с «Учить».'}</p>${btn('tab', 'learn', 'Учить новые слова', 'p')}`);
   }
   const { c, k } = pick[0]; LAST = c; const [type, dir, rem] = L.plan(c, P[k].b, ST, P[k].r);
   ask(c, type, 'review', P[k].b, rem, dir);
 }
 function reviewMenu() {
-  show('<h1>Что повторяем?</h1>' + btn('rev', 'all', `Все разделы (${dueList().length})`, 'p') + Object.keys(CATS).map(c => dueList(c).length ? btn('rev', c, `${CATS[c][0]} (${dueList(c).length})`) : '').join(''));
+  show('<h1>Что повторяем?</h1>' + btn('rev', 'all', `Все разделы (${dueList().length})`, 'p') + btn('mix','review','Выбрать разделы') + Object.keys(CATS).map(c => dueList(c).length ? btn('rev', c, `${CATS[c][0]} (${dueList(c).length})`) : '').join(''));
 }
 function stats() {
   const rows = Object.keys(CATS).map(c => { const ks = Object.keys(P).filter(k => k.startsWith(c + ':')); if (!ks.length) return ''; const d = ks.filter(k => P[k].b >= L.LEARNED).length, ok = ks.reduce((a, k) => a + P[k].o, 0), tot = ok + ks.reduce((a, k) => a + P[k].f, 0);
     return btn('list', c, `${CATS[c][0]}<br><span class="mu">слов ${ks.length} из ${D[c].length} · учу ${ks.length - d} · выучено ${d} · верно ${tot ? Math.round(100 * ok / tot) : 0}%</span>`); }).join('');
-  show(`<h1>Слова</h1>${rows || '<p class="mu">Пока пусто. Начни с «Учить».</p>'}`);
+  show(`<h1>Слова</h1>${btn('personal','','Добавить своё слово','p')}${rows || '<p class="mu">Пока пусто. Начни с «Учить».</p>'}`);
 }
 function list() {
   const c = LS.cat, ks = Object.keys(P).filter(k => k.startsWith(c + ':')).map(k => ({ k, c: D[c].find(x => x.u === k.slice(c.length + 1)), b: P[k].b })).filter(x => x.c);
@@ -161,6 +189,56 @@ function list() {
   ${items.slice(0, LS.n).map(x => btn('word', c + ':' + x.c.idx, `${E(front(x.c))} <span class="mu">— ${E(x.c.t)}</span>`)).join('') || '<p class="mu">Здесь пока пусто.</p>'}
   ${items.length > LS.n ? btn('more', '', 'Показать ещё', 'c') : ''}${btn('tab', 'stats', 'Назад', 'c')}`);
 }
+function personalForm() {
+  show(`<h1>Своё слово</h1><form id="personal-form"><section class="card">
+    <label>Слово или выражение по-немецки<input required type="text" name="de" lang="de" placeholder="die Vorfreude"></label>
+    <label>Перевод<input required type="text" name="ru" placeholder="радостное предвкушение"></label>
+    <label>Уровень<select name="level"><option value="">Без уровня</option>${LV.map(l => '<option>' + l + '</option>').join('')}</select></label>
+    <label>Примеры на немецком<textarea name="examples" rows="2" placeholder="Каждый пример с новой строки"></textarea></label>
+    <label>Переводы примеров<textarea name="translations" rows="2" placeholder="В том же порядке, по желанию"></textarea></label>
+    </section><button class="btn p" type="submit">Сохранить слово</button></form>${btn('tab','stats','Назад','c')}`);
+}
+async function appendPersonal(card) {
+  const db = await idb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('kv','readwrite');
+    const store = tx.objectStore('kv');
+    const read = store.get('own');
+    let cards;
+    read.onsuccess = () => {
+      cards = read.result || [];
+      card.idx = cards.length;
+      cards.push(card);
+      store.put(cards,'own');
+    };
+    tx.oncomplete = () => { db.close(); resolve(cards); };
+    tx.onabort = () => { db.close(); reject(tx.error); };
+  });
+}
+function writeRecords(records) {
+  return idb().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction('kv', 'readwrite');
+    for (const [k,v] of Object.entries(records)) tx.objectStore('kv').put(v,k);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onabort = () => { db.close(); reject(tx.error); };
+  }));
+}
+document.addEventListener('submit', async event => {
+  if (event.target.id !== 'personal-form') return;
+  event.preventDefault();
+  const form = event.target, fields = new FormData(form);
+  const value = k => fields.get(k).trim();
+  const lines = k => value(k) ? value(k).split(/\r?\n/).map(x => x.trim()) : [];
+  const de = value('de'), ru = value('ru'), examples = lines('examples'), translations = lines('translations');
+  if (!de || !ru) return alert('Введи слово и перевод.');
+  if (translations.some((t,i) => t && !examples[i])) return alert('Для каждого перевода добавь пример в соответствующей строке.');
+  const card = {u:crypto.randomUUID(),cat:'own',idx:D.own.length,d:de,t:ru,l:value('level'),e:examples.map((t,i) => [t,translations[i] || '']).filter(([t]) => t)};
+  form.querySelector('button').disabled = true;
+  try {
+    D.own = await appendPersonal(card);
+    if (form.isConnected) show(`<h1>Слово добавлено</h1><div class="card">${reveal(card)}</div>${btn('lvl','own:ALL','Учить свои слова','p')}${btn('personal','','Добавить ещё','c')}`);
+  } catch { form.querySelector('button').disabled = false; alert('Не удалось сохранить слово на устройстве. Попробуй ещё раз.'); }
+});
 function updateLimitButtons() {
   document.querySelectorAll('[data-a="lim"]').forEach(button => {
     button.classList.toggle('on', Number(button.dataset.v) === ST.limit);
@@ -178,7 +256,7 @@ function settings() {
   <div class="card"><h2 style="margin-top:0">Способ ответов</h2>${sel('meth', [['auto', 'По этапам (сначала варианты, потом ввод)'], ['choice', 'Только варианты'], ['type', 'Только ввод вручную']], ST.method)}
   <h2>Направление вопросов</h2>${sel('dirs', [['alt', 'Чередовать'], ['de_ru', 'Немецкий → русский'], ['ru_de', 'Русский → немецкий']], ST.dir)}</div>
   <div class="card"><h2 style="margin-top:0">Копия прогресса</h2><p class="mu">Данные хранятся только на этом телефоне. Последняя копия: <span id="bkd">${bk}</span>.</p>${btn('bk', 'dl', 'Скачать файл', 'c')}${btn('bk', 'share', 'Поделиться файлом', 'c')}${btn('bk', 'copy', 'Скопировать текст', 'c')}<div id="bkm" class="mu"></div>
-  <h2>Загрузить копию</h2>${btn('imp', '', 'Выбрать файл', 'c')}${btn('impclip', '', 'Вставить из буфера', 'c')}</div><p class="mu">Wortschatz 2.4</p>`);
+  <h2>Загрузить копию</h2>${btn('imp', '', 'Выбрать файл', 'c')}${btn('impclip', '', 'Вставить из буфера', 'c')}</div><p class="mu">Wortschatz 2.7</p>`);
 }
 // ---------- действия ----------
 function go(t) { tab = t; LAST = null; ({ home, learn: learnMenu, review: reviewMenu, stats, set: settings }[t] || home)(); }
@@ -188,7 +266,7 @@ function bkMsg(t, ok) {
   if (ok) { ST.bk = now(); save(); const d = $('#bkd'); if (d) d.textContent = new Date().toLocaleDateString('ru-RU'); }
 }
 async function bk(kind) {
-  const text = JSON.stringify({ v: 2, P, ST }), name = bkName();
+  const text = JSON.stringify({ v: 3, P, ST, own: D.own }), name = bkName();
   try {
     if (kind === 'dl') {
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' })); a.download = name; a.style.display = 'none';
@@ -201,9 +279,30 @@ async function bk(kind) {
     } else { await navigator.clipboard.writeText(text); bkMsg('Текст копии скопирован Вставь его в заметки или в сообщение себе и сохрани там.', true); }
   } catch (e) { bkMsg(e && e.name === 'AbortError' ? 'Отменено.' : 'Не получилось (' + ((e && e.name) || 'ошибка') + '). Попробуй другой способ.', false); }
 }
-function applyImport(t) {
-  try { const d = JSON.parse(t); if (d.v === 1) return alert('Это копия первой версии Wortschatz. Здесь нужна копия Wortschatz 2.');
-    if (d.v !== 2 || !d.P || typeof d.P !== 'object' || Array.isArray(d.P)) throw 0; if (confirm('Загрузить копию? Текущий прогресс на этом телефоне будет заменён.')) { P = d.P; ST = Object.assign(ST, d.ST); applyTheme(); ST.bk = now(); save(); alert('Готово '); go('home'); } } catch (x) { alert('Не получилось прочитать копию: это не файл и не текст копии Wortschatz.'); }
+async function applyImport(t) {
+  try {
+    const d = JSON.parse(t);
+    if (d.v === 1) return alert('Это копия первой версии Wortschatz. Здесь нужна копия Wortschatz 2.');
+    if (![2,3].includes(d.v) || !d.P || typeof d.P !== 'object' || Array.isArray(d.P)) throw Error();
+    const own = d.v === 3 ? d.own : D.own;
+    const ids = new Set();
+    if (!Array.isArray(own)) throw Error();
+    const cards = own.map((c,idx) => {
+      if (!c || typeof c.u !== 'string' || !c.u || ids.has(c.u) ||
+        ![c.d,c.t].every(x => typeof x === 'string' && x.trim()) ||
+        !['', ...LV].includes(c.l) || !Array.isArray(c.e) ||
+        !c.e.every(x => Array.isArray(x) && x.length === 2 && x.every(s => typeof s === 'string'))) throw Error();
+      ids.add(c.u);
+      return {u:c.u,d:c.d,t:c.t,l:c.l,e:c.e,cat:'own',idx};
+    });
+    if (!confirm(d.v === 3 ? 'Заменить текущий прогресс и свои слова данными из копии?' : 'Заменить прогресс данными из копии? Свои слова сохранятся.')) return;
+    const settings = {...ST,...d.ST,bk:now()};
+    const progress = {...d.P};
+    if (d.v === 2) for (const c of cards) { const k = key(c); if (P[k]) progress[k] = P[k]; }
+    await writeRecords({own:cards,progress,settings});
+    D.own = cards; P = progress; ST = settings;
+    applyTheme(); go('home');
+  } catch { alert('Не удалось загрузить копию. Проверь файл и свободное место на устройстве.'); }
 }
 async function impClip() {
   let t = ''; try { t = await navigator.clipboard.readText(); } catch (e) { t = prompt('Вставь сюда текст копии:') || ''; }
@@ -224,7 +323,17 @@ document.addEventListener('click', e => {
 
   const b = e.target.closest('[data-a]'); if (!b) return; const a = b.dataset.a, v = b.dataset.v;
   if (a === 'tab') go(v);
-  else if (a === 'cat') { if (CATS[v][1]) levelMenu(v); else { ST.cat = v; ST.level = 'ALL'; save(); newCard(); } }
+  else if (a === 'personal') personalForm();
+  else if (a === 'mix') mixMenu(v);
+  else if (a === 'startmix') {
+    const selection = Array.from(document.querySelectorAll('[name="section"]:checked'), input => input.value);
+    if (!selection.length) return alert('Выбери хотя бы один раздел или уровень.');
+    ST[v + 'Mix'] = selection;
+    if (v === 'learn') ST.cat = 'mix'; else RC = 'mix';
+    save();
+    if (v === 'learn') newCard(); else nextReview();
+  }
+  else if (a === 'cat') { if (v === 'own' && !D.own.length) personalForm(); else if (v !== 'own' || D.own.some(c => c.l)) levelMenu(v); else { ST.cat = v; ST.level = 'ALL'; save(); newCard(); } }
   else if (a === 'lvl') { const [c, l] = v.split(':'); ST.cat = c; ST.level = l; save(); newCard(); }
   else if (a === 'cont') newCard();
   else if (a === 'rev') { RC = v; LAST = null; nextReview(); }
