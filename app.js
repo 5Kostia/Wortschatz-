@@ -10,10 +10,29 @@ const kvSet = async (k, v) => { const db = await idb(); return new Promise(r => 
 const save = () => { kvSet('progress', P); kvSet('settings', ST); };
 try { P = (await kvGet('progress')) || {}; ST = Object.assign(ST, await kvGet('settings')); } catch (e) { }
 const themes = { standard: 'Стандартная', lime: 'Чёрная с зелёным', graphite: 'Чёрная с серым' };
+const root = document.documentElement;
+const standaloneIOS = navigator.standalone === true;
+const portrait = matchMedia('(orientation: portrait)');
+function fitBottomBar() {
+  // With viewport-fit=cover, a positive top inset indicates the app covers the status bar.
+  // Some iOS versions still end the viewport above the bottom system area.
+  const coversStatusBar = parseFloat(getComputedStyle($('#app')).paddingTop) > 18;
+  const fullWidth = Math.abs(screen.width - innerWidth) <= 1;
+  const outside = portrait.matches && coversStatusBar && fullWidth
+    ? Math.max(0, screen.height - innerHeight) : 0;
+  root.style.setProperty('--bottom-outside-viewport', outside + 'px');
+}
+if (standaloneIOS) {
+  root.dataset.iosStandalone = "";
+  fitBottomBar();
+  addEventListener('resize', fitBottomBar);
+  addEventListener('pageshow', fitBottomBar);
+}
 function applyTheme() {
   if (!Object.hasOwn(themes, ST.theme)) ST.theme = 'standard';
-  document.documentElement.dataset.theme = ST.theme;
-  document.querySelector('meta[name="theme-color"]').content = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+  root.dataset.theme = ST.theme;
+  const chromeColor = standaloneIOS ? '--panel' : '--bg';
+  document.querySelector('meta[name="theme-color"]').content = getComputedStyle(root).getPropertyValue(chromeColor).trim();
 }
 applyTheme();
 if (!ST.since) { ST.since = Math.floor(Date.now() / 1000); kvSet('settings', ST); }
@@ -159,7 +178,7 @@ function settings() {
   <div class="card"><h2 style="margin-top:0">Способ ответов</h2>${sel('meth', [['auto', 'По этапам (сначала варианты, потом ввод)'], ['choice', 'Только варианты'], ['type', 'Только ввод вручную']], ST.method)}
   <h2>Направление вопросов</h2>${sel('dirs', [['alt', 'Чередовать'], ['de_ru', 'Немецкий → русский'], ['ru_de', 'Русский → немецкий']], ST.dir)}</div>
   <div class="card"><h2 style="margin-top:0">Копия прогресса</h2><p class="mu">Данные хранятся только на этом телефоне. Последняя копия: <span id="bkd">${bk}</span>.</p>${btn('bk', 'dl', 'Скачать файл', 'c')}${btn('bk', 'share', 'Поделиться файлом', 'c')}${btn('bk', 'copy', 'Скопировать текст', 'c')}<div id="bkm" class="mu"></div>
-  <h2>Загрузить копию</h2>${btn('imp', '', 'Выбрать файл', 'c')}${btn('impclip', '', 'Вставить из буфера', 'c')}</div>`);
+  <h2>Загрузить копию</h2>${btn('imp', '', 'Выбрать файл', 'c')}${btn('impclip', '', 'Вставить из буфера', 'c')}</div><p class="mu">Wortschatz 2.4</p>`);
 }
 // ---------- действия ----------
 function go(t) { tab = t; LAST = null; ({ home, learn: learnMenu, review: reviewMenu, stats, set: settings }[t] || home)(); }
