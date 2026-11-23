@@ -26,7 +26,12 @@ const todayN = () => Object.values(P).filter(p => p.l >= startDay()).length;
 const unseen = (cat, lv) => D[cat].filter(c => !P[key(c)] && (lv === 'ALL' || c.l === lv));
 const dueList = pre => Object.keys(P).filter(k => P[k].d <= now() && (!pre || k.startsWith(pre + ':'))).sort((a, b) => P[a].d - P[b].d).map(k => { const [cat, ...u] = k.split(':'); const c = D[cat] && D[cat].find(x => x.u === u.join(':')); return c && { c, k }; }).filter(Boolean);
 const cardOf = (cat, idx) => D[cat][idx];
-const show = h => { $('#app').innerHTML = '<div class="screen">' + h + '</div>'; $('#app').scrollTop = 0; document.querySelectorAll('nav button').forEach(b => { const active = b.dataset.v === tab; b.classList.toggle('on', active); if (active) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); }); };
+let noticeTimer;
+function clearNotice() {
+  clearTimeout(noticeTimer);
+  $('#notice').textContent = '';
+}
+const show = h => { clearNotice(); $('#app').innerHTML = '<div class="screen">' + h + '</div>'; $('#app').scrollTop = 0; document.querySelectorAll('nav button').forEach(b => { const active = b.dataset.v === tab; b.classList.toggle('on', active); if (active) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); }); };
 const btn = (a, v, t, cls = '') => `<button class="btn ${cls}" data-a="${a}" data-v="${E(v)}">${t}</button>`;
 function reveal(c) {
   let h = c.cat === 'verb' ? `<div class="big">${E(c.d)}</div><div>${E(c.t)}</div><div class="mu">er/sie/es ${E(c.p)} · ${E(c.f)}</div>` :
@@ -95,25 +100,29 @@ function finish(ok, unknown, given, note) {
   let completion = '', particles = '';
   if (Q.flow === 'review') {
     P[k].lastReview = now();
-    if (!dueList().length) {
+    if (!Q.corrected && !dueList().length) {
       const count = Object.values(P).filter(word => word.lastReview >= startDay()).length;
       const forms = { one: 'слово', few: 'слова', many: 'слов' };
       const unit = forms[new Intl.PluralRules('ru').select(count)];
-      completion = `<div class="summary" role="status"><strong>На сегодня всё</strong><div>Повторено ${count} ${unit}</div></div>`;
-      if (!Q.corrected) particles = '<div class="confetti" aria-hidden="true">' +
+      completion = `На сегодня всё. Повторено ${count} ${unit}`;
+      particles = '<div class="confetti" aria-hidden="true">' +
         Array.from({length: 12}, (_, i) => `<i style="--x:${3+i*8.4}%;--drift:${(i%3-1)*14}px;--delay:${i%4*45}ms"></i>`).join('') + '</div>';
     }
   }
   const learned = P[k].b >= L.LEARNED && (Q.previous?.b || 0) < L.LEARNED;
   save();
   const typed = Q.type.startsWith('type'), extra = Q.corrected ? '' : ok && !typed ? btn('guess', c.cat + ':' + c.idx + ':' + Q.box, 'Угадал, повторить', 'c') : !ok && typed ? btn('over', c.cat + ':' + c.idx + ':' + Q.box, 'Засчитать как верный', 'c') : '';
-  show(`${completion}<div class="result-wrap">${particles}<div class="card result"><h2 role="status" class="${ok ? 'ok' : unknown ? '' : 'bad'}" style="margin-top:0">${ok ? 'Верно!' : unknown ? 'Ответ' : 'Неверно.'}</h2>${note ? `<div class="mu">${E(note)}</div>` : ''}${!ok && given ? `<div>Твой ответ: ${E(given)}</div>` : ''}${reveal(c)}${hint(c)}${learned ? '<p class="milestone">Слово выучено</p>' : ''}<p>${info}</p></div></div>${extra}${btn(Q.flow === 'review' ? 'nextr' : 'nextl', '', 'Дальше', 'p')}`);
+  show(`<div class="result-wrap">${particles}<div class="card result"><h2 role="status" class="${ok ? 'ok' : unknown ? '' : 'bad'}" style="margin-top:0">${ok ? 'Верно!' : unknown ? 'Ответ' : 'Неверно.'}</h2>${note ? `<div class="mu">${E(note)}</div>` : ''}${!ok && given ? `<div>Твой ответ: ${E(given)}</div>` : ''}${reveal(c)}${hint(c)}${learned ? '<p class="milestone">Слово выучено</p>' : ''}<p>${info}</p></div></div>${extra}${btn(Q.flow === 'review' ? 'nextr' : 'nextl', '', 'Дальше', 'p')}`);
+  if (completion) {
+    $('#notice').textContent = completion;
+    noticeTimer = setTimeout(clearNotice, 4000);
+  }
 }
 function nextReview() {
   tab = 'review'; const all = dueList(RC === 'all' ? '' : RC), pick = all.filter(x => x.c !== LAST) .length ? all.filter(x => x.c !== LAST) : all;
   if (!pick.length) {
     const nx = Object.values(P).filter(p => p.d > now()).map(p => p.d).sort((a, b) => a - b)[0];
-    return show(`<h1>${Object.keys(P).length ? 'На сегодня всё повторено ' : 'Пока нечего повторять'}</h1><p>${nx ? 'Ближайшее повторение через ' + L.wait(nx - now()) + '.' : 'Начни с «Учить».'}</p>${btn('tab', 'learn', 'Учить новые слова', 'p')}`);
+    return show(`<h1>${Object.keys(P).length ? 'Очередь пуста' : 'Пока нечего повторять'}</h1><p>${nx ? 'Ближайшее повторение через ' + L.wait(nx - now()) + '.' : 'Начни с «Учить».'}</p>${btn('tab', 'learn', 'Учить новые слова', 'p')}`);
   }
   const { c, k } = pick[0]; LAST = c; const [type, dir, rem] = L.plan(c, P[k].b, ST, P[k].r);
   ask(c, type, 'review', P[k].b, rem, dir);
@@ -133,11 +142,20 @@ function list() {
   ${items.slice(0, LS.n).map(x => btn('word', c + ':' + x.c.idx, `${E(front(x.c))} <span class="mu">— ${E(x.c.t)}</span>`)).join('') || '<p class="mu">Здесь пока пусто.</p>'}
   ${items.length > LS.n ? btn('more', '', 'Показать ещё', 'c') : ''}${btn('tab', 'stats', 'Назад', 'c')}`);
 }
+function updateLimitButtons() {
+  document.querySelectorAll('[data-a="lim"]').forEach(button => {
+    button.classList.toggle('on', Number(button.dataset.v) === ST.limit);
+  });
+}
 function settings() {
   const ch = (a, arr, cur) => arr.map(v => `<button class="chip ${v == cur ? 'on' : ''}" data-a="${a}" data-v="${v}">${v}</button>`).join('');
-  const sel = (id, opts, cur) => `<select id="${id}">${opts.map(o => `<option value="${o[0]}" ${o[0] === cur ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>`;
+  const sel = (name, opts, current) => {
+    const selected = opts.find(([value]) => value === current) || opts[0];
+    const rows = opts.map(([value, label]) => `<label><input type="radio" name="${name}" value="${value}" ${value === selected[0] ? 'checked' : ''}><span>${label}</span></label>`);
+    return `<details class="picker"><summary>${selected[1]}</summary>${rows.join('')}</details>`;
+  };
   const bk = ST.bk ? new Date(ST.bk * 1000).toLocaleDateString('ru-RU') : 'ещё не было';
-  show(`<h1>Настройки</h1><section class="card"><h2 style="margin-top:0">Тема</h2><label for="theme">Выбрать тему</label>${sel('theme', Object.entries(themes), ST.theme)}</section><div class="card"><h2 style="margin-top:0">Новых слов в день</h2>${ch('lim', [5, 10, 15, 20, 25, 30, 40, 50], ST.limit)}<input type="number" id="limc" min="1" max="200" placeholder="Своё число, например 6">${btn('limset', '', 'Сохранить число', 'c')}</div>
+  show(`<h1>Настройки</h1><section class="card"><h2 style="margin-top:0">Тема</h2><div class="mu">Выбрать тему</div>${sel('theme', Object.entries(themes), ST.theme)}</section><div class="card"><h2 style="margin-top:0">Новых слов в день</h2>${ch('lim', [5, 10, 15, 20, 25, 30, 40, 50], ST.limit)}<input type="number" id="limc" min="1" max="200" placeholder="Своё число, например 6">${btn('limset', '', 'Сохранить число', 'c')}</div>
   <div class="card"><h2 style="margin-top:0">Способ ответов</h2>${sel('meth', [['auto', 'По этапам (сначала варианты, потом ввод)'], ['choice', 'Только варианты'], ['type', 'Только ввод вручную']], ST.method)}
   <h2>Направление вопросов</h2>${sel('dirs', [['alt', 'Чередовать'], ['de_ru', 'Немецкий → русский'], ['ru_de', 'Русский → немецкий']], ST.dir)}</div>
   <div class="card"><h2 style="margin-top:0">Копия прогресса</h2><p class="mu">Данные хранятся только на этом телефоне. Последняя копия: <span id="bkd">${bk}</span>.</p>${btn('bk', 'dl', 'Скачать файл', 'c')}${btn('bk', 'share', 'Поделиться файлом', 'c')}${btn('bk', 'copy', 'Скопировать текст', 'c')}<div id="bkm" class="mu"></div>
@@ -173,6 +191,18 @@ async function impClip() {
   if (t) applyImport(t);
 }
 document.addEventListener('click', e => {
+  const picker = e.target.closest('.picker');
+  if (picker && e.target.type === 'radio') {
+    const field = { theme: 'theme', meth: 'method', dirs: 'dir' }[e.target.name];
+    ST[field] = e.target.value;
+    if (field === 'theme') applyTheme();
+    save();
+    const summary = picker.querySelector('summary');
+    summary.textContent = e.target.closest('label').textContent.trim();
+    picker.open = false;
+    summary.focus({ preventScroll: true });
+  }
+
   const b = e.target.closest('[data-a]'); if (!b) return; const a = b.dataset.a, v = b.dataset.v;
   if (a === 'tab') go(v);
   else if (a === 'cat') { if (CATS[v][1]) levelMenu(v); else { ST.cat = v; ST.level = 'ALL'; save(); newCard(); } }
@@ -195,8 +225,8 @@ document.addEventListener('click', e => {
   else if (a === 'lst') { LS.st = v; LS.n = 30; list(); } else if (a === 'more') { LS.n += 30; list(); }
   else if (a === 'word') { const [c, i] = v.split(':'), card = cardOf(c, +i), p = P[key(card)], w = p.d - now(); show(`<div class="card">${reveal(card)}<p class="mu">Ступень ${p.b} из ${L.INT.length - 1}, ${w <= 0 ? 'можно повторять уже сейчас' : 'повтор через ' + L.wait(w)}</p></div>${btn('back', v, 'Вернуть на повтор', 'p')}${btn('list', c, 'К списку', 'c')}`); }
   else if (a === 'back') { const [c, i] = v.split(':'), card = cardOf(c, +i); L.giveBack(P, key(card), now()); save(); show(`<div class="card">${reveal(card)}<p>Слово вернулось на повтор: оно уже ждёт в разделе «Повторить».</p></div>${btn('list', c, 'К списку', 'c')}`); }
-  else if (a === 'lim') { ST.limit = +v; save(); settings(); }
-  else if (a === 'limset') { const n = Math.round(+$('#limc').value); if (n >= 1 && n <= 200) { ST.limit = n; save(); } settings(); }
+  else if (a === 'lim') { ST.limit = +v; save(); updateLimitButtons(); }
+  else if (a === 'limset') { const n = Math.round(+$('#limc').value); if (n >= 1 && n <= 200) { ST.limit = n; save(); updateLimitButtons(); $('#limc').value = ''; } }
   else if (a === 'bk') bk(v); else if (a === 'imp') $('#imp').click(); else if (a === 'impclip') impClip();
 });
 function sendAns() {
@@ -206,9 +236,7 @@ function sendAns() {
 }
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'ans') sendAns(); });
 document.addEventListener('change', e => {
-  if (e.target.id === 'theme') { ST.theme = e.target.value; applyTheme(); save(); }
-  else if (e.target.id === 'meth') { ST.method = e.target.value; save(); } else if (e.target.id === 'dirs') { ST.dir = e.target.value; save(); }
-  else if (e.target.id === 'imp' && e.target.files[0]) { e.target.files[0].text().then(applyImport); e.target.value = ''; }
+  if (e.target.id === 'imp' && e.target.files[0]) { e.target.files[0].text().then(applyImport); e.target.value = ''; }
 });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 go('home');
