@@ -1,0 +1,23 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /wortschatzAccounts/{uid}/entries/{entry} {
+      function isOwner() {
+        return request.auth != null && request.auth.uid == uid;
+      }
+      allow read: if isOwner();
+      allow create, update: if isOwner()
+        && request.resource.data.keys().hasAll(['id', 'at', 'tie', 'value'])
+        && request.resource.data.keys().hasOnly(['id', 'at', 'tie', 'value'])
+        && request.resource.data.id is string
+        && request.resource.data.id.size() <= 450
+        && request.resource.data.id.matches('^[pw]:.+$')
+        && request.resource.data.at is int
+        && request.resource.data.at >= 0
+        && request.resource.data.tie is string
+        && request.resource.data.tie.size() == 36
+        && request.resource.data.value is string
+        && request.resource.data.value.size() <= 24000;
+    }
+  }
+}

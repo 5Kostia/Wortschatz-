@@ -7,8 +7,22 @@ let D, P = {}, ST = { limit: 10, method: 'auto', dir: 'alt', cat: null, level: '
 const idb = () => new Promise((ok, no) => { const r = indexedDB.open('wortschatz-v2', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); });
 const kvGet = async k => { const db = await idb(); return new Promise(r => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => r(q.result); q.onerror = () => r(undefined); }); };
 const kvSet = async (k, v) => { const db = await idb(); return new Promise(r => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = r; t.onerror = r; }); };
-const save = () => { kvSet('progress', P); kvSet('settings', ST); };
-try { P = (await kvGet('progress')) || {}; ST = Object.assign(ST, await kvGet('settings')); } catch (e) { }
+const results = window.WortschatzResults;
+const activityPrefix = 'p:activity:';
+let activity = {}, resultsPeriod = 'week';
+let cloud, profile = null, cloudStatus;
+function save(cardKey, changes = {}) {
+  if (!profile && cardKey) writeRecords({ progress: P, activity }).catch(() => {
+    alert('Не удалось сохранить результат на устройстве.');
+  });
+  else if (profile && cardKey) {
+    const payload = { ['p:' + cardKey]: JSON.stringify(P[cardKey]) };
+    for (const [id, value] of Object.entries(changes)) payload[activityPrefix + id] = JSON.stringify(value);
+    cloud.saveLocal(payload).catch(() => {});
+  }
+  kvSet('settings', ST);
+}
+try { P = (await kvGet('progress')) || {}; activity = (await kvGet('activity')) || {}; ST = Object.assign(ST, await kvGet('settings')); } catch (e) { }
 const themes = { standard: 'Стандартная', lime: 'Чёрная с зелёным', graphite: 'Чёрная с серым', powder: 'Пудровая', pink: 'Ягодная' };
 const root = document.documentElement;
 const standaloneIOS = navigator.standalone === true;
@@ -45,7 +59,70 @@ const startDay = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.
 const todayN = () => Object.values(P).filter(p => p.l >= startDay()).length;
 const unseen = (cat, lv) => D[cat].filter(c => !P[key(c)] && (lv === 'ALL' || c.l === lv));
 const dueList = pre => Object.keys(P).filter(k => P[k].d <= now() && (!pre || k.startsWith(pre + ':'))).sort((a, b) => P[a].d - P[b].d).map(k => { const [cat, ...u] = k.split(':'); const c = D[cat] && D[cat].find(x => x.u === u.join(':')); return c && { c, k }; }).filter(Boolean);
-const cardOf = (cat, idx) => D[cat][idx];
+const personalIndexes = new Map(D.own.map(c => [c.u, c.idx]));
+const cardOf = (cat, idx) => cat === 'own' ? D.own.find(card => card.idx === idx) : D[cat][idx];
+function setPersonal(cards) {
+  D.own = cards.map(card => {
+    if (!personalIndexes.has(card.u)) personalIndexes.set(card.u, personalIndexes.size);
+    return { ...card, cat: 'own', idx: personalIndexes.get(card.u) };
+  });
+}
+function cloudValues(records) {
+  const progress = Object.create(null), history = Object.create(null), cards = [];
+  for (const [id, entry] of Object.entries(records)) {
+    if (entry.value === null) continue;
+    try {
+      const value = JSON.parse(entry.value);
+      if (id.startsWith(activityPrefix) && typeof value === 'boolean') {
+        history[id.slice(activityPrefix.length)] = value;
+      } else if (id.startsWith('p:') && value && Number.isFinite(value.d) &&
+          Number.isInteger(value.b) && value.b >= 1 && value.b < L.INT.length) {
+        progress[id.slice(2)] = value;
+      } else if (id.startsWith('w:') && value?.u === id.slice(2) &&
+          typeof value.d === 'string' && value.d && typeof value.t === 'string' &&
+          ['', ...LV].includes(value.l) && Array.isArray(value.e)) {
+        cards.push(value);
+      }
+    } catch { /* An invalid record is skipped without resetting the other cards. */ }
+  }
+  P = progress;
+  activity = history;
+  setPersonal(cards);
+  if (tab === 'home') home();
+  else if ($('.results')) { refreshResults(true); renderSectionStats(); }
+}
+async function setAccount(next) {
+  if (profile?.uid === next?.uid) return;
+  profile = next;
+  Q = null;
+  personalIndexes.clear();
+  P = next ? {} : (await kvGet('progress')) || {};
+  activity = next ? {} : (await kvGet('activity')) || {};
+  setPersonal(next ? [] : (await kvGet('own')) || []);
+  go(tab === 'set' ? 'set' : 'home');
+}
+async function guestValues() {
+  const progress = (await kvGet('progress')) || {};
+  const cards = (await kvGet('own')) || [];
+  const history = (await kvGet('activity')) || {};
+  return Object.fromEntries([
+    ...Object.entries(progress).map(([id, data]) => ['p:' + id, JSON.stringify(data)]),
+    ...cards.map(card => ['w:' + card.u, JSON.stringify(card)]),
+    ...Object.entries(history).map(([id, value]) => [activityPrefix + id, JSON.stringify(value)])
+  ]);
+}
+function renderCloud() {
+  const panel = $('#cloud-account');
+  if (!panel) return;
+  const { account, text, error, connected, pending } = cloudStatus || {};
+  const button = account ? btn('cloud-out', '', 'Выйти из Google', 'c') :
+    btn('cloud-in', '', connected ? 'Войти через Google' : 'Подключить Google', 'p');
+  panel.innerHTML = (account?.email ? '<p>' + E(account.email) + '</p>' : '') +
+    '<p class="' + (error ? 'bad' : 'mu') + '" role="status">' +
+    E(text || 'Подключаем вход…') + '</p>' + button +
+    (pending && account ? '<p class="mu">Изменения хранятся на этом устройстве до синхронизации.</p>' : '');
+}
+
 let noticeTimer;
 function clearNotice() {
   clearTimeout(noticeTimer);
@@ -69,7 +146,6 @@ function hint(c) {
 // ---------- экраны ----------
 function home() {
   const n = dueList().length;
-  const old = Object.keys(P).length && now() - Math.max(ST.bk || 0, ST.since || 0) > 7 * 86400;
   const learned = todayN();
   const learn = btn('tab', 'learn', 'Учить новые слова', n ? 'c' : 'p');
   const review = btn('tab', 'review', `Повторить (${n})`, n ? 'p' : 'c');
@@ -77,7 +153,6 @@ function home() {
   <section class="card today"><h2>Сегодня</h2><div class="metrics"><div><strong>${learned}<small> / ${ST.limit}</small></strong>Новых слов</div><div><strong>${n}</strong>К повторению</div></div>
   <progress aria-label="Новых слов за сегодня" max="${ST.limit}" value="${Math.min(learned, ST.limit)}"></progress></section>
   ${n ? review + learn : learn + review}
-  ${old ? '<div class="card">Прошла неделя с последней копии прогресса. Когда будет минутка, открой «Ещё» → «Сохранить копию».</div>' : ''}
   `);
 }
 function matchesSelection(card, selection) {
@@ -138,6 +213,20 @@ function ask(c, type, flow, box, store, dir) {
   show(`${left}<div class="card"><div class="mu">${T}</div><div class="big">${word}</div>${sub}</div>${body}${btn('ans', -1, 'Не знаю', 'c')}`);
   const i = $('#ans'); if (i) i.focus();
 }
+function trackActivity(cardKey, kinds, question) {
+  const date = question ? (question.activityDate ??= new Date()) : new Date();
+  const events = kinds.map(kind => results.activityId(kind, cardKey, date));
+  const changes = {};
+  if (question?.corrected) {
+    for (const id of question.activityAdded || []) {
+      if (!events.includes(id)) changes[id] = false;
+    }
+  }
+  for (const id of events) if (activity[id] !== true) changes[id] = true;
+  if (question && !question.corrected) question.activityAdded = Object.keys(changes);
+  Object.assign(activity, changes);
+  save(cardKey, changes);
+}
 function finish(ok, unknown, given, note) {
   const c = Q.c, k = key(c); if (!Q.done) Q.previous = P[k] && { ...P[k] };
   Q.done = true; let info;
@@ -148,7 +237,7 @@ function finish(ok, unknown, given, note) {
   else info = `Добавил слово в изучение. Первое повторение через ${L.wait(L.addLearning(P, k, now()))}.`;
   let completion = '', particles = '';
   if (Q.flow === 'review') {
-    P[k].lastReview = now();
+    P[k].lastReview = Q.reviewTime ??= now();
     if (!Q.corrected && !dueList().length) {
       const count = Object.values(P).filter(word => word.lastReview >= startDay()).length;
       const forms = { one: 'слово', few: 'слова', many: 'слов' };
@@ -159,7 +248,9 @@ function finish(ok, unknown, given, note) {
     }
   }
   const learned = P[k].b >= L.LEARNED && (Q.previous?.b || 0) < L.LEARNED;
-  save();
+  const kinds = Q.flow === 'review' ? ['reviewed'] : [ok ? 'known' : 'started'];
+  if (Q.flow === 'review' && learned) kinds.push('learned');
+  trackActivity(k, kinds, Q);
   const typed = Q.type.startsWith('type'), extra = Q.corrected ? '' : ok && !typed ? btn('guess', c.cat + ':' + c.idx + ':' + Q.box, 'Угадал, повторить', 'c') : !ok && typed ? btn('over', c.cat + ':' + c.idx + ':' + Q.box, 'Засчитать как верный', 'c') : '';
   show(`<div class="result-wrap">${particles}<div class="card result"><h2 role="status" class="${ok ? 'ok' : unknown ? '' : 'bad'}" style="margin-top:0">${ok ? 'Верно!' : unknown ? 'Ответ' : 'Неверно.'}</h2>${note ? `<div class="mu">${E(note)}</div>` : ''}${!ok && given ? `<div>Твой ответ: ${E(given)}</div>` : ''}${reveal(c)}${hint(c)}${learned ? '<p class="milestone">Слово выучено</p>' : ''}<p>${info}</p></div></div>${extra}${btn(Q.flow === 'review' ? 'nextr' : 'nextl', '', 'Дальше', 'p')}`);
   if (completion) {
@@ -179,10 +270,71 @@ function nextReview() {
 function reviewMenu() {
   show('<h1>Что повторяем?</h1>' + btn('rev', 'all', `Все разделы (${dueList().length})`, 'p') + btn('mix','review','Выбрать разделы') + Object.keys(CATS).map(c => dueList(c).length ? btn('rev', c, `${CATS[c][0]} (${dueList(c).length})`) : '').join(''));
 }
+function refreshResults(preserveScroll = false) {
+  const section = $('.results');
+  if (!section) return;
+  const oldScroll = preserveScroll ? section.querySelector('.results-scroll')?.scrollLeft : undefined;
+  const selected = preserveScroll ? section.querySelector('[data-column][aria-pressed=true]')?.dataset.column : undefined;
+  const active = preserveScroll && section.contains(document.activeElement) ? document.activeElement : null;
+  results.render(section, {
+    progress: P, activity, learnedBox: L.LEARNED, period: resultsPeriod,
+    onPeriod: period => {
+      resultsPeriod = period;
+      refreshResults();
+      section.querySelector(`[data-period="${period}"]`).focus({ preventScroll: true });
+    }
+  });
+  if (oldScroll != null) section.querySelector('.results-scroll').scrollLeft = oldScroll;
+  if (selected != null) section.querySelector(`[data-column="${selected}"]`)?.click();
+  if (active?.dataset.period) section.querySelector(`[data-period="${active.dataset.period}"]`)?.focus({ preventScroll: true });
+  if (active?.dataset.column) section.querySelector(`[data-column="${active.dataset.column}"]`)?.focus({ preventScroll: true });
+}
+const expandedSections = new Set();
+document.addEventListener('toggle', ({ target }) => {
+  if (!target.matches?.('.section-progress') || !target.isConnected) return;
+  if (target.open) expandedSections.add(target.dataset.category);
+  else expandedSections.delete(target.dataset.category);
+}, true);
+function renderSectionStats() {
+  const container = $('.section-list');
+  const markup = Object.entries(CATS).map(([category, [name]]) => {
+    if (!D[category].length) return '';
+    const levels = new Map([...LV, ''].map(level => [level, {
+      label: level || 'Без уровня', words: 0, learned: 0, learning: 0
+    }]));
+    let correct = 0, attempts = 0;
+    for (const card of D[category]) {
+      const level = levels.get(card.l) || levels.get('');
+      level.words++;
+      const item = P[key(card)];
+      if (!item) continue;
+      if (item.b >= L.LEARNED) level.learned++;
+      else level.learning++;
+      correct += item.o || 0;
+      attempts += (item.o || 0) + (item.f || 0);
+    }
+    return results.sectionMarkup({
+      category, name, levels: [...levels.values()].filter(level => level.words),
+      accuracy: attempts ? Math.round(100 * correct / attempts) : null,
+      listButton: btn('list', category, 'Открыть список слов', 'section-list-button')
+    });
+  }).join('');
+  if (container.sectionMarkup === markup) return;
+  container.sectionMarkup = markup;
+  const activeSummary = document.activeElement?.closest('.section-progress summary');
+  const focusedCategory = activeSummary?.parentElement.dataset.category;
+  const open = new Set([...container.querySelectorAll('details[open]')].map(el => el.dataset.category));
+  for (const category of expandedSections) open.add(category);
+  container.innerHTML = markup;
+  for (const detail of container.querySelectorAll('.section-progress')) {
+    detail.open = open.has(detail.dataset.category);
+    if (detail.dataset.category === focusedCategory) detail.querySelector('summary').focus({ preventScroll: true });
+  }
+}
 function stats() {
-  const rows = Object.keys(CATS).map(c => { const ks = Object.keys(P).filter(k => k.startsWith(c + ':')); if (!ks.length) return ''; const d = ks.filter(k => P[k].b >= L.LEARNED).length, ok = ks.reduce((a, k) => a + P[k].o, 0), tot = ok + ks.reduce((a, k) => a + P[k].f, 0);
-    return btn('list', c, `${CATS[c][0]}<br><span class="mu">слов ${ks.length} из ${D[c].length} · учу ${ks.length - d} · выучено ${d} · верно ${tot ? Math.round(100 * ok / tot) : 0}%</span>`); }).join('');
-  show(`<h1>Слова</h1>${btn('personal','','Добавить своё слово','p')}${rows || '<p class="mu">Пока пусто. Начни с «Учить».</p>'}`);
+  show(`<h1>Слова</h1>${btn('personal','','Добавить своё слово','p')}<section class="card results"></section><h2>По разделам</h2><div class="section-list"></div>`);
+  refreshResults();
+  renderSectionStats();
 }
 function list() {
   const c = LS.cat, ks = Object.keys(P).filter(k => k.startsWith(c + ':')).map(k => ({ k, c: D[c].find(x => x.u === k.slice(c.length + 1)), b: P[k].b })).filter(x => x.c);
@@ -233,11 +385,15 @@ document.addEventListener('submit', async event => {
   const lines = k => value(k) ? value(k).split(/\r?\n/).map(x => x.trim()) : [];
   const de = value('de'), ru = value('ru'), examples = lines('examples'), translations = lines('translations');
   if (!de || !ru) return alert('Введи слово и перевод.');
+  if ([de, ru, ...examples, ...translations].join('').length > 4000) {
+    return alert('Сократи карточку до 4000 символов.');
+  }
   if (translations.some((t,i) => t && !examples[i])) return alert('Для каждого перевода добавь пример в соответствующей строке.');
   const card = {u:crypto.randomUUID(),cat:'own',idx:D.own.length,d:de,t:ru,l:value('level'),e:examples.map((t,i) => [t,translations[i] || '']).filter(([t]) => t)};
   form.querySelector('button').disabled = true;
   try {
-    D.own = await appendPersonal(card);
+    if (profile) await cloud.saveLocal({ ['w:' + card.u]: JSON.stringify(card) });
+    else setPersonal(await appendPersonal(card));
     if (form.isConnected) show(`<h1>Слово добавлено</h1><div class="card">${reveal(card)}</div>${btn('lvl','own:ALL','Учить свои слова','p')}${btn('personal','','Добавить ещё','c')}`);
   } catch { form.querySelector('button').disabled = false; alert('Не удалось сохранить слово на устройстве. Попробуй ещё раз.'); }
 });
@@ -254,11 +410,12 @@ function settings() {
     return `<details class="picker"><summary>${selected[1]}</summary>${rows.join('')}</details>`;
   };
   const bk = ST.bk ? new Date(ST.bk * 1000).toLocaleDateString('ru-RU') : 'ещё не было';
-  show(`<h1>Настройки</h1><section class="card"><h2 style="margin-top:0">Тема</h2><div class="mu">Выбрать тему</div>${sel('theme', Object.entries(themes), ST.theme)}</section><div class="card"><h2 style="margin-top:0">Новых слов в день</h2>${ch('lim', [5, 10, 15, 20, 25, 30, 40, 50], ST.limit)}<input type="number" id="limc" min="1" max="200" placeholder="Своё число, например 6">${btn('limset', '', 'Сохранить число', 'c')}</div>
+  show(`<h1>Настройки</h1><section class="card"><h2 style="margin-top:0">Google и синхронизация</h2><div id="cloud-account"></div></section><section class="card"><h2 style="margin-top:0">Тема</h2><div class="mu">Выбрать тему</div>${sel('theme', Object.entries(themes), ST.theme)}</section><div class="card"><h2 style="margin-top:0">Новых слов в день</h2>${ch('lim', [5, 10, 15, 20, 25, 30, 40, 50], ST.limit)}<input type="number" id="limc" min="1" max="200" placeholder="Своё число, например 6">${btn('limset', '', 'Сохранить число', 'c')}</div>
   <div class="card"><h2 style="margin-top:0">Способ ответов</h2>${sel('meth', [['auto', 'По этапам (сначала варианты, потом ввод)'], ['choice', 'Только варианты'], ['type', 'Только ввод вручную']], ST.method)}
   <h2>Направление вопросов</h2>${sel('dirs', [['alt', 'Чередовать'], ['de_ru', 'Немецкий → русский'], ['ru_de', 'Русский → немецкий']], ST.dir)}</div>
-  <div class="card"><h2 style="margin-top:0">Копия прогресса</h2><p class="mu">Данные хранятся только на этом телефоне. Последняя копия: <span id="bkd">${bk}</span>.</p>${btn('bk', 'dl', 'Скачать файл', 'c')}${btn('bk', 'share', 'Поделиться файлом', 'c')}${btn('bk', 'copy', 'Скопировать текст', 'c')}<div id="bkm" class="mu"></div>
-  <h2>Загрузить копию</h2>${btn('imp', '', 'Выбрать файл', 'c')}${btn('impclip', '', 'Вставить из буфера', 'c')}</div><p class="mu">Wortschatz 2.11</p>`);
+  <details class="card"><summary>Ручная копия прогресса</summary><p class="mu">Последняя копия: <span id="bkd">${bk}</span>.</p>${btn('bk', 'dl', 'Скачать файл', 'c')}${btn('bk', 'share', 'Поделиться файлом', 'c')}${btn('bk', 'copy', 'Скопировать текст', 'c')}<div id="bkm" class="mu"></div>
+  ${profile ? '' : `<h2>Загрузить копию</h2>${btn('imp', '', 'Выбрать файл', 'c')}${btn('impclip', '', 'Вставить из буфера', 'c')}`}</details><p class="mu">Wortschatz 2.16</p>`);
+  renderCloud();
 }
 // ---------- действия ----------
 function go(t) { tab = t; LAST = null; ({ home, learn: learnMenu, review: reviewMenu, stats, set: settings }[t] || home)(); }
@@ -268,7 +425,7 @@ function bkMsg(t, ok) {
   if (ok) { ST.bk = now(); save(); const d = $('#bkd'); if (d) d.textContent = new Date().toLocaleDateString('ru-RU'); }
 }
 async function bk(kind) {
-  const text = JSON.stringify({ v: 3, P, ST, own: D.own }), name = bkName();
+  const text = JSON.stringify({ v: 3, P, ST, own: D.own, activity }), name = bkName();
   try {
     if (kind === 'dl') {
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' })); a.download = name; a.style.display = 'none';
@@ -282,6 +439,7 @@ async function bk(kind) {
   } catch (e) { bkMsg(e && e.name === 'AbortError' ? 'Отменено.' : 'Не получилось (' + ((e && e.name) || 'ошибка') + '). Попробуй другой способ.', false); }
 }
 async function applyImport(t) {
+  if (profile) return alert('Выйди из аккаунта, чтобы загрузить локальную копию.');
   try {
     const d = JSON.parse(t);
     if (d.v === 1) return alert('Это копия первой версии Wortschatz. Здесь нужна копия Wortschatz 2.');
@@ -301,8 +459,11 @@ async function applyImport(t) {
     const settings = {...ST,...d.ST,bk:now()};
     const progress = {...d.P};
     if (d.v === 2) for (const c of cards) { const k = key(c); if (P[k]) progress[k] = P[k]; }
-    await writeRecords({own:cards,progress,settings});
-    D.own = cards; P = progress; ST = settings;
+    const importedActivity = Object.fromEntries(Object.entries(d.activity || {}).filter(
+      ([id, value]) => /^\d{4}-\d{2}-\d{2}\|(started|reviewed|learned|known)\|.+$/.test(id) &&
+        id.length <= 450 && typeof value === 'boolean'));
+    await writeRecords({own:cards,progress,settings,activity:importedActivity});
+    setPersonal(cards); P = progress; ST = settings; activity = importedActivity;
     applyTheme(); go('home');
   } catch { alert('Не удалось загрузить копию. Проверь файл и свободное место на устройстве.'); }
 }
@@ -325,6 +486,8 @@ document.addEventListener('click', e => {
 
   const b = e.target.closest('[data-a]'); if (!b) return; const a = b.dataset.a, v = b.dataset.v;
   if (a === 'tab') go(v);
+  else if (a === 'cloud-in') cloud.login();
+  else if (a === 'cloud-out') cloud.logout();
   else if (a === 'personal') personalForm();
   else if (a === 'mix') mixMenu(v);
   else if (a === 'startmix') {
@@ -339,8 +502,8 @@ document.addEventListener('click', e => {
   else if (a === 'lvl') { const [c, l] = v.split(':'); ST.cat = c; ST.level = l; save(); newCard(); }
   else if (a === 'cont') newCard();
   else if (a === 'rev') { RC = v; LAST = null; nextReview(); }
-  else if (a === 'know') { const [c, i, y] = v.split(':'), card = cardOf(c, +i); if (P[key(card)]) return newCard();
-    if (y === 'n') { Q = { c: card, flow: 'learn', box: 1, type: 'x' }; const d = L.addLearning(P, key(card), now()); save(); show(`<div class="card result">${reveal(card)}${hint(card)}<p>Слово добавлено в изучение. Первое повторение через ${L.wait(d)}.</p></div>${btn('nextl', '', 'Дальше', 'p')}`); }
+  else if (a === 'know') { const [c, i, y] = v.split(':'), card = cardOf(c, +i); if (!card || P[key(card)]) return newCard();
+    if (y === 'n') { Q = { c: card, flow: 'learn', box: 1, type: 'x' }; const d = L.addLearning(P, key(card), now()); trackActivity(key(card), ['started']); show(`<div class="card result">${reveal(card)}${hint(card)}<p>Слово добавлено в изучение. Первое повторение через ${L.wait(d)}.</p></div>${btn('nextl', '', 'Дальше', 'p')}`); }
     else ask(card, c === 'vp' ? 'choice_prep' : 'choice_tr', 'learn', 1, null); }
   else if (a === 'ans') { if (!Q || Q.done) return go('home'); const i = +v; finish(i !== -1 && i === Q.ok, i === -1, i >= 0 && Q.opts ? Q.opts[i] : '', ''); }
   else if (a === 'send') sendAns();
@@ -353,8 +516,8 @@ document.addEventListener('click', e => {
   }
   else if (a === 'list') { LS = { cat: v, st: 'L', n: 30 }; list(); }
   else if (a === 'lst') { LS.st = v; LS.n = 30; list(); } else if (a === 'more') { LS.n += 30; list(); }
-  else if (a === 'word') { const [c, i] = v.split(':'), card = cardOf(c, +i), p = P[key(card)], w = p.d - now(); show(`<div class="card">${reveal(card)}<p class="mu">Ступень ${p.b} из ${L.INT.length - 1}, ${w <= 0 ? 'можно повторять уже сейчас' : 'повтор через ' + L.wait(w)}</p></div>${btn('back', v, 'Вернуть на повтор', 'p')}${btn('list', c, 'К списку', 'c')}`); }
-  else if (a === 'back') { const [c, i] = v.split(':'), card = cardOf(c, +i); L.giveBack(P, key(card), now()); save(); show(`<div class="card">${reveal(card)}<p>Слово вернулось на повтор: оно уже ждёт в разделе «Повторить».</p></div>${btn('list', c, 'К списку', 'c')}`); }
+  else if (a === 'word') { const [c, i] = v.split(':'), card = cardOf(c, +i), p = card && P[key(card)]; if (!p) return list(); const w = p.d - now(); show(`<div class="card">${reveal(card)}<p class="mu">Ступень ${p.b} из ${L.INT.length - 1}, ${w <= 0 ? 'можно повторять уже сейчас' : 'повтор через ' + L.wait(w)}</p></div>${btn('back', v, 'Вернуть на повтор', 'p')}${btn('list', c, 'К списку', 'c')}`); }
+  else if (a === 'back') { const [c, i] = v.split(':'), card = cardOf(c, +i); if (!card || !P[key(card)]) return list(); L.giveBack(P, key(card), now()); save(key(card)); show(`<div class="card">${reveal(card)}<p>Слово вернулось на повтор: оно уже ждёт в разделе «Повторить».</p></div>${btn('list', c, 'К списку', 'c')}`); }
   else if (a === 'lim') { ST.limit = +v; save(); updateLimitButtons(); }
   else if (a === 'limset') { const n = Math.round(+$('#limc').value); if (n >= 1 && n <= 200) { ST.limit = n; save(); updateLimitButtons(); $('#limc').value = ''; } }
   else if (a === 'bk') bk(v); else if (a === 'imp') $('#imp').click(); else if (a === 'impclip') impClip();
@@ -369,5 +532,19 @@ document.addEventListener('change', e => {
   if (e.target.id === 'imp' && e.target.files[0]) { e.target.files[0].text().then(applyImport); e.target.value = ''; }
 });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+cloud = WortschatzCloud.create({
+  get: kvGet,
+  change: update => idb().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction('kv', 'readwrite');
+    update(tx.objectStore('kv'));
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onabort = () => { db.close(); reject(tx.error); };
+  })),
+  onAccount: setAccount,
+  onRecords: cloudValues,
+  onStatus: status => { cloudStatus = status; renderCloud(); },
+  guestRecords: guestValues
+});
+await cloud.restore().catch(() => {});
 go('home');
 })();
