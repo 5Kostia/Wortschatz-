@@ -22,8 +22,9 @@
   }
 
   function create({ get, change, onAccount, onRecords, onStatus, guestRecords }) {
-    let api, auth, firestore, loading, account, stop, retryTimer;
+    let api, auth, firestore, loading, account, stop, stopAccess, retryTimer;
     let busy = false, onlineSnapshot = false, failedSnapshot = null, writeError = null;
+    let accessGranted = false, accessRetry = false, signedOutMessage;
     let model = empty(), queue = Promise.resolve();
     const awaitingLocal = new Map();
     const announce = (text, error = false) => onStatus({
@@ -125,13 +126,13 @@
     }
 
     function schedule(ms = 350) {
-      if (!retryTimer && account && auth?.currentUser?.uid === account.uid && navigator.onLine) {
+      if (!retryTimer && accessGranted && account && auth?.currentUser?.uid === account.uid && navigator.onLine) {
         retryTimer = setTimeout(() => { retryTimer = null; flush(); }, ms);
       }
     }
 
     async function flush() {
-      if (busy || !account || auth?.currentUser?.uid !== account.uid) return;
+      if (busy || !accessGranted || !account || auth?.currentUser?.uid !== account.uid) return;
       const uid = account.uid;
       const sent = Object.fromEntries(Object.entries(model.pending).slice(0, 75));
       if (!Object.keys(sent).length) return;
@@ -188,27 +189,68 @@
       });
     }
 
+    async function clearAccount() {
+      await change(store => store.delete(ownerKey));
+      account = null;
+      model = empty();
+      await onAccount(null);
+    }
+
+    async function deny(user, message) {
+      if (auth.currentUser?.uid !== user.uid) return;
+      accessGranted = false;
+      stop?.();
+      stopAccess?.();
+      await clearAccount();
+      signedOutMessage = message;
+      announce(message, true);
+      if (auth.currentUser?.uid === user.uid) await api.signOut(auth);
+    }
+
     async function activate(user) {
       return enqueue(async () => {
+        if (user && auth.currentUser?.uid !== user.uid) return;
         stop?.();
-        stop = null;
+        stopAccess?.();
+        stop = stopAccess = null;
+        accessGranted = accessRetry = false;
         onlineSnapshot = false;
         failedSnapshot = null;
         writeError = null;
         if (!user) {
-          await change(store => store.delete(ownerKey));
-          account = null;
-          model = empty();
-          await onAccount(null);
-          announce('Войди, чтобы синхронизировать прогресс и свои слова.');
+          await clearAccount();
+          announce(signedOutMessage || 'Войди, чтобы синхронизировать прогресс и свои слова.', Boolean(signedOutMessage));
+          signedOutMessage = null;
           return;
         }
         const uid = user.uid;
+        const email = user.email?.toLowerCase();
+        const forbidden = 'Для этой почты доступ к Wortschatz не включён. Выбери разрешённый Google-аккаунт.';
+        if (!email || !user.emailVerified) return deny(user, forbidden);
+        const access = api.doc(firestore, 'allowedUsers', email);
+        if (account && account.uid !== uid) await clearAccount();
+        try {
+          const permission = await api.getDocFromServer(access);
+          if (auth.currentUser?.uid !== uid) return;
+          if (permission.data()?.enabled !== true) return deny(user, forbidden);
+        } catch (error) {
+          if (auth.currentUser?.uid !== uid) return;
+          if (error.code === 'permission-denied') {
+            return deny(user, 'Не удалось проверить право входа. Проверь правила доступа Wortschatz в Firebase.');
+          }
+          accessRetry = true;
+          return announce('Для проверки доступа нужно подключение к интернету.', true);
+        }
+        accessGranted = true;
         const candidate = await guestRecords();
         const previouslyAsked = await get(seeds(uid));
+        if (auth.currentUser?.uid !== uid) {
+          accessGranted = false;
+          return;
+        }
         const seed = !previouslyAsked && Object.keys(candidate).length &&
           confirm('Добавить прогресс и свои слова с этого устройства в Google-аккаунт? Для совпадающих карточек сохранится облачный прогресс.');
-        const profile = { uid, email: user.email || '' };
+        const profile = { uid, email: user.email, approved: true };
         let next;
         await change(store => {
           store.put(profile, ownerKey);
@@ -225,6 +267,15 @@
         await onAccount(profile);
         setModel(next);
         listen(uid);
+        stopAccess = api.onSnapshot(access, { includeMetadataChanges: true }, snapshot => {
+          if (auth.currentUser?.uid === uid && !snapshot.metadata.fromCache && snapshot.data()?.enabled !== true) {
+            enqueue(() => deny(user, forbidden)).catch(error => announce(errorText(error), true));
+          }
+        }, error => {
+          if (auth.currentUser?.uid === uid && error.code === 'permission-denied') {
+            enqueue(() => deny(user, 'Право доступа к Wortschatz больше недоступно.')).catch(error => announce(errorText(error), true));
+          }
+        });
         schedule();
         syncStatus();
       });
@@ -249,16 +300,24 @@
       return loading;
     }
 
-    addEventListener('online', () => { connect(); schedule(); });
+    function reconnect() {
+      connect();
+      if (accessRetry && auth?.currentUser && navigator.onLine) {
+        accessRetry = false;
+        activate(auth.currentUser).catch(error => announce(errorText(error), true));
+      } else schedule();
+    }
+    addEventListener('online', reconnect);
     addEventListener('offline', () => {
       clearTimeout(retryTimer);
       retryTimer = null;
       if (account) syncStatus();
     });
-    addEventListener('pageshow', () => { if (account) schedule(); });
+    addEventListener('pageshow', reconnect);
     return {
       async restore() {
         account = await get(ownerKey);
+        if (account?.approved !== true) account = null;
         if (account) {
           await onAccount(account);
           setModel(await get(states(account.uid)) || empty());
@@ -270,7 +329,9 @@
       login() {
         if (!api) { connect(); return; }
         announce('Открываем вход через Google…');
-        api.signInWithPopup(auth, new api.GoogleAuthProvider()).catch(error => announce(errorText(error), true));
+        const provider = new api.GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: 'select_account' });
+        api.signInWithPopup(auth, provider).catch(error => announce(errorText(error), true));
       },
       async logout() {
         if (!api) return;

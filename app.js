@@ -414,7 +414,7 @@ function settings() {
   <div class="card"><h2 style="margin-top:0">Способ ответов</h2>${sel('meth', [['auto', 'По этапам (сначала варианты, потом ввод)'], ['choice', 'Только варианты'], ['type', 'Только ввод вручную']], ST.method)}
   <h2>Направление вопросов</h2>${sel('dirs', [['alt', 'Чередовать'], ['de_ru', 'Немецкий → русский'], ['ru_de', 'Русский → немецкий']], ST.dir)}</div>
   <details class="card"><summary>Ручная копия прогресса</summary><p class="mu">Последняя копия: <span id="bkd">${bk}</span>.</p>${btn('bk', 'dl', 'Скачать файл', 'c')}${btn('bk', 'share', 'Поделиться файлом', 'c')}${btn('bk', 'copy', 'Скопировать текст', 'c')}<div id="bkm" class="mu"></div>
-  ${profile ? '' : `<h2>Загрузить копию</h2>${btn('imp', '', 'Выбрать файл', 'c')}${btn('impclip', '', 'Вставить из буфера', 'c')}`}</details><p class="mu">Wortschatz 2.16</p>`);
+  ${profile ? '' : `<h2>Загрузить копию</h2>${btn('imp', '', 'Выбрать файл', 'c')}${btn('impclip', '', 'Вставить из буфера', 'c')}`}</details><p class="mu">Wortschatz 2.17</p>`);
   renderCloud();
 }
 // ---------- действия ----------
